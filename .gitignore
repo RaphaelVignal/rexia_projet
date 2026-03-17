@@ -1,3 +1,4 @@
 *.csv
 .venv/
 uv.lock
+data/CelebA
