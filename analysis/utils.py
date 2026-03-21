@@ -8,9 +8,17 @@ from pandas import DataFrame, read_csv
 DATA_PATH = '../Data/RH_dataset.csv'
 
 
+# ---------------------------------------------------------------------------
+# I/O
+# ---------------------------------------------------------------------------
+
 def load_dataframe() -> DataFrame:
     return read_csv(DATA_PATH, delimiter=';')
 
+
+# ---------------------------------------------------------------------------
+# Private helpers
+# ---------------------------------------------------------------------------
 
 def _encode_series_for_plot(s: pd.Series) -> tuple:
     """
@@ -20,10 +28,10 @@ def _encode_series_for_plot(s: pd.Series) -> tuple:
     - Categorical/text series: mapped to integer codes with a tick label list.
 
     Returns:
-        y_values   – float Series ready for plotting
-        tick_pos   – list[int] | None
-        tick_labels– list[str] | None
-        is_numeric – bool
+        y_values    – float Series ready for plotting
+        tick_pos    – list[int] | None
+        tick_labels – list[str] | None
+        is_numeric  – bool
     """
     s_num = pd.to_numeric(s, errors="coerce")
     if s_num.notna().all():
@@ -31,7 +39,7 @@ def _encode_series_for_plot(s: pd.Series) -> tuple:
 
     s_cat = s.astype("string")
     categories = pd.Index(s_cat.dropna().unique())
-    mapping = {label: i for i, label in enumerate(categories)}
+    mapping = {cat: i for i, cat in enumerate(categories)}
     y = s_cat.map(mapping).astype(float)
     return y, list(mapping.values()), list(mapping.keys()), False
 
@@ -66,6 +74,55 @@ def _prepare_df_for_plot(df: DataFrame, x_col: str, *y_cols: str) -> DataFrame:
     tmp = df[cols].copy()
     tmp[x_col] = _parse_x_series(tmp[x_col])
     return tmp.dropna(subset=[x_col]).sort_values(x_col)
+
+
+def _build_shared_y_encoding(
+    prepared: list[DataFrame],
+    y_col: str,
+) -> tuple[list[DataFrame], list | None, list | None]:
+    """
+    Build a consistent y encoding across n DataFrames for the same column.
+
+    If all values are numeric, assigns __y via direct numeric conversion.
+    If categorical, builds a single global mapping so categories align across
+    all series (i.e. the same label always maps to the same y position).
+
+    Mutates each DataFrame in `prepared` in-place by adding a ``__y`` column.
+
+    Returns:
+        (prepared, y_ticks, y_labels)
+    """
+    y_all = pd.concat([p[y_col] for p in prepared], ignore_index=True)
+    y_all_num = pd.to_numeric(y_all, errors="coerce")
+
+    if y_all_num.notna().all():
+        for p in prepared:
+            p["__y"] = pd.to_numeric(p[y_col], errors="coerce")
+        return prepared, None, None
+
+    y_all_cat = y_all.astype("string")
+    categories = pd.Index(y_all_cat.dropna().unique())
+    mapping = {cat: i for i, cat in enumerate(categories)}
+    for p in prepared:
+        p["__y"] = p[y_col].astype("string").map(mapping).astype(float)
+    return prepared, list(mapping.values()), list(mapping.keys())
+
+
+def _draw_resignation_vlines(
+    ax: plt.Axes,
+    df: DataFrame,
+    x_col: str,
+    color,
+    resignation_col: str = "label",
+) -> None:
+    """
+    Draw a dashed vertical line for every row where resignation_col == 1.
+    Silently skips if the column is absent in df.
+    """
+    if resignation_col not in df.columns:
+        return
+    for x_val in df.loc[df[resignation_col] == 1, x_col]:
+        ax.axvline(x_val, color=color, linestyle="--", linewidth=1.2, alpha=0.7)
 
 
 # ---------------------------------------------------------------------------
@@ -106,45 +163,129 @@ def plot_distribution(df: DataFrame, column: str) -> None:
 
 def plot_column_vs_anciennete(
     ax: plt.Axes,
-    df: DataFrame,
+    dataframes: DataFrame | list[DataFrame],
     x_col: str,
     y_col: str,
+    labels: Optional[list[str]] = None,
+    kinds: Optional[list[str]] = None,
+    show_resignations: bool = False,
 ) -> None:
-    """Plot y_col against x_col on a provided Matplotlib axis."""
-    # Ancienneté is always numeric — skip the full _parse_x_series cascade.
-    tmp = df[[x_col, y_col]].copy()
-    tmp[x_col] = pd.to_numeric(tmp[x_col], errors="coerce")
-    tmp = tmp.dropna(subset=[x_col]).sort_values(x_col)
+    """
+    Plot y_col against x_col on a provided Matplotlib axis.
 
-    y_vals, y_ticks, y_labels, is_numeric = _encode_series_for_plot(tmp[y_col])
-    tmp["__y"] = y_vals
-    tmp = tmp.dropna(subset=["__y"])
+    Supports one or multiple DataFrames superposed on the same axis.
+    Each series is x-normalised independently (origin forced to 0).
+    Colors cycle through tab10.
 
-    if is_numeric:
-        ax.plot(tmp[x_col], tmp["__y"], marker="o", linewidth=1.5)
-    else:
-        ax.scatter(tmp[x_col], tmp["__y"], s=18, alpha=0.8)
-        _apply_yticks(ax, y_ticks, y_labels, max_labels=15)
+    Args:
+        ax:                 target Matplotlib axis.
+        dataframes:         one DataFrame or a list of DataFrames.
+        x_col:              x-axis column (must be numeric-coercible).
+        y_col:              y-axis column.
+        labels:             legend label per series. Shown only when multiple
+                            series are present or explicitly provided.
+        kinds:              "line" or "scatter" per series. Auto-detected from
+                            dtype when None.
+        show_resignations:  if True, draw a dashed vline (same color as the
+                            series) at every x where the "label" column == 1.
+                            Silently skipped for series missing that column.
+    """
+    if isinstance(dataframes, DataFrame):
+        dataframes = [dataframes]
 
+    n = len(dataframes)
+    show_legend = labels is not None or n > 1
+    labels = labels or [f"Series {i}" for i in range(n)]
+    kinds = kinds or [None] * n
+
+    cmap = plt.get_cmap("tab10")
+
+    raw_tmps = []
+    for df in dataframes:
+        extra = ["label"] if show_resignations and "label" in df.columns else []
+        cols = [x_col, y_col, *extra]
+        tmp = df[cols].copy()
+        tmp[x_col] = pd.to_numeric(tmp[x_col], errors="coerce")
+        tmp = tmp.dropna(subset=[x_col]).sort_values(x_col)
+        tmp[x_col] -= tmp[x_col].min()  # origin at 0, independent per series
+        raw_tmps.append(tmp)
+
+    raw_tmps, y_ticks, y_labels = _build_shared_y_encoding(raw_tmps, y_col)
+
+    for i, (tmp, label, kind) in enumerate(zip(raw_tmps, labels, kinds)):
+        tmp = tmp.dropna(subset=["__y"])
+
+        if kind is None:
+            s_num = pd.to_numeric(tmp[y_col], errors="coerce")
+            kind = "line" if s_num.notna().all() else "scatter"
+
+        color = cmap(i % 10)
+        kwargs: dict = {"label": label} if show_legend else {}
+        if n > 1:
+            kwargs["color"] = color
+
+        if kind == "scatter":
+            ax.scatter(tmp[x_col], tmp["__y"], s=18, alpha=0.8, **kwargs)
+        else:
+            ax.plot(tmp[x_col], tmp["__y"], marker="o", linewidth=1.5, **kwargs)
+
+        if show_resignations:
+            _draw_resignation_vlines(ax, tmp, x_col, color=color)
+
+    _apply_yticks(ax, y_ticks, y_labels, max_labels=15)
     ax.set_title(y_col)
     ax.set_xlabel(x_col)
     ax.grid(True, alpha=0.25)
+    if show_legend:
+        ax.legend(loc="best", fontsize="small")
 
 
 def multiplot_all_columns_by_anciennete(
-    df: DataFrame,
+    dataframes: DataFrame | list[DataFrame],
     x_col: str = "Ancienneté groupe (années)",
     exclude_cols: Optional[Iterable[str]] = None,
+    labels: Optional[list[str]] = None,
+    kinds: Optional[list[str]] = None,
+    show_resignations: bool = False,
     ncols: int = 3,
     height_per_row: float = 4,
     width_per_col: float = 5.2,
 ) -> None:
-    """Plot all columns (except excluded ones) against x_col in a grid."""
-    if x_col not in df.columns:
-        raise ValueError(f"Column '{x_col}' not found in dataframe.")
+    """
+    Plot all columns (except excluded ones) against x_col in a subplot grid.
+
+    Supports one or multiple DataFrames — each subplot shows all series
+    superposed on the same axis via plot_column_vs_anciennete.
+
+    Args:
+        dataframes:        one DataFrame or a list of DataFrames.
+        x_col:             shared x-axis column (must exist in every DataFrame).
+        exclude_cols:      columns to omit from the grid (x_col always excluded).
+                           When show_resignations=True, "label" is also excluded
+                           automatically (it is encoded as vlines instead).
+        labels:            legend label per DataFrame.
+        kinds:             "line" or "scatter" per DataFrame (auto-detected when None).
+        show_resignations: passed through to plot_column_vs_anciennete.
+        ncols:             number of subplot columns.
+        height_per_row / width_per_col: figure sizing.
+    """
+    if isinstance(dataframes, DataFrame):
+        dataframes = [dataframes]
+
+    for df in dataframes:
+        if x_col not in df.columns:
+            raise ValueError(f"Column '{x_col}' not found in one of the dataframes.")
+
+    seen: dict[str, None] = {}
+    for df in dataframes:
+        for col in df.columns:
+            seen[col] = None
 
     excluded = set(exclude_cols or []) | {x_col}
-    y_cols = [c for c in df.columns if c not in excluded]
+    if show_resignations:
+        excluded.add("label")  # encoded as vlines, not as a subplot
+
+    y_cols = [c for c in seen if c not in excluded]
     if not y_cols:
         raise ValueError("No columns left to plot.")
 
@@ -158,11 +299,25 @@ def multiplot_all_columns_by_anciennete(
 
     axes_flat = axes.ravel()
     for i, col in enumerate(y_cols):
-        plot_column_vs_anciennete(axes_flat[i], df, x_col=x_col, y_col=col)
+        valid_idx    = [j for j, df in enumerate(dataframes) if col in df.columns]
+        valid_dfs    = [dataframes[j] for j in valid_idx]
+        valid_labels = [labels[j] for j in valid_idx] if labels else None
+        valid_kinds  = [kinds[j]  for j in valid_idx] if kinds  else None
+
+        plot_column_vs_anciennete(
+            axes_flat[i],
+            dataframes=valid_dfs,
+            x_col=x_col,
+            y_col=col,
+            labels=valid_labels,
+            kinds=valid_kinds,
+            show_resignations=show_resignations,
+        )
+
     for j in range(len(y_cols), len(axes_flat)):
         axes_flat[j].set_visible(False)
 
-    fig.suptitle(f"All columns vs {x_col}", y=1.02)
+    fig.suptitle(f"Data vs {x_col}", y=1.02)
     fig.tight_layout()
     plt.show()
 
@@ -227,6 +382,84 @@ def plot_two_columns_by_x(
     return fig, ax1, ax2
 
 
+def plot_n_series_by_x(
+    dataframes: list[DataFrame],
+    x_col: str,
+    y_col: str,
+    labels: Optional[list[str]] = None,
+    kinds: Optional[list[str]] = None,
+    show_resignations: bool = False,
+    figsize: tuple[float, float] = (10, 4.5),
+) -> tuple[plt.Figure, plt.Axes]:
+    """
+    Plot the same y column from n DataFrames on one shared axis.
+
+    Categorical y values are encoded with a single global mapping so that
+    category positions are consistent across all series.
+    Colors cycle through tab10 (wraps around for n > 10).
+
+    Args:
+        dataframes:        one DataFrame per series.
+        x_col:             shared x-axis column name (present in every DataFrame).
+        y_col:             shared y-axis column name (present in every DataFrame).
+        labels:            legend label per series. Defaults to "Series 0", "Series 1", …
+        kinds:             "line" or "scatter" per series. Defaults to "line" for all.
+        show_resignations: if True, draw a dashed vline (same color as the series)
+                           at every x where the "label" column == 1. Silently
+                           skipped for series missing that column.
+        figsize:           passed directly to plt.subplots.
+
+    Returns:
+        (fig, ax)
+    """
+    n = len(dataframes)
+    if n == 0:
+        raise ValueError("At least one DataFrame is required.")
+
+    labels = labels or [f"Series {i}" for i in range(n)]
+    kinds = kinds or ["line"] * n
+
+    if len(labels) != n or len(kinds) != n:
+        raise ValueError("`dataframes`, `labels`, and `kinds` must all have the same length.")
+
+    for label, df in zip(labels, dataframes):
+        missing = [c for c in (x_col, y_col) if c not in df.columns]
+        if missing:
+            raise ValueError(f"'{label}': missing columns {missing}")
+
+    # Include "label" column in preparation when needed so it survives x-sorting.
+    def _prep(df: DataFrame) -> DataFrame:
+        extra = ["label"] if show_resignations and "label" in df.columns else []
+        return _prepare_df_for_plot(df, x_col, y_col, *extra)
+
+    prepared = [_prep(df) for df in dataframes]
+    prepared, y_ticks, y_labels = _build_shared_y_encoding(prepared, y_col)
+
+    cmap = plt.get_cmap("tab10")
+    fig, ax = plt.subplots(figsize=figsize)
+
+    for i, (p, label, kind) in enumerate(zip(prepared, labels, kinds)):
+        p = p.dropna(subset=["__y"])
+        color = cmap(i % 10)
+        if kind == "scatter":
+            ax.scatter(p[x_col], p["__y"], color=color, alpha=0.85, label=label)
+        else:
+            ax.plot(p[x_col], p["__y"], color=color, marker="o", linewidth=1.5, label=label)
+
+        if show_resignations:
+            _draw_resignation_vlines(ax, p, x_col, color=color)
+
+    ax.set_xlabel(x_col)
+    ax.set_ylabel(y_col)
+    ax.set_title(f"{y_col} by {x_col}")
+    ax.grid(True, alpha=0.25)
+    _apply_yticks(ax, y_ticks, y_labels)
+    ax.legend(loc="best")
+
+    fig.tight_layout()
+    return fig, ax
+
+
 def plot_same_column_two_dataframes_by_x(
     df1: DataFrame,
     df2: DataFrame,
@@ -237,60 +470,19 @@ def plot_same_column_two_dataframes_by_x(
     df1_kind: str = "line",
     df2_kind: str = "line",
     figsize: tuple[float, float] = (10, 4.5),
-):
+) -> tuple[plt.Figure, plt.Axes]:
     """
     Compare the same y column from two DataFrames on one shared axis.
-    Supports numeric or categorical y values.
+    Thin wrapper around plot_n_series_by_x for backward compatibility.
 
     Returns:
         (fig, ax)
     """
-    for name, df in ((df1_label, df1), (df2_label, df2)):
-        missing = [c for c in (x_col, y_col) if c not in df.columns]
-        if missing:
-            raise ValueError(f"{name}: missing columns {missing}")
-
-    p1 = _prepare_df_for_plot(df1, x_col, y_col)
-    p2 = _prepare_df_for_plot(df2, x_col, y_col)
-
-    # Build a shared y encoding so categories align between both dataframes.
-    y_all = pd.concat([p1[y_col], p2[y_col]], ignore_index=True)
-    y_all_num = pd.to_numeric(y_all, errors="coerce")
-
-    if y_all_num.notna().all():
-        p1["__y"] = pd.to_numeric(p1[y_col], errors="coerce")
-        p2["__y"] = pd.to_numeric(p2[y_col], errors="coerce")
-        y_ticks, y_labels = None, None
-    else:
-        y_all_cat = y_all.astype("string")
-        categories = pd.Index(y_all_cat.dropna().unique())
-        mapping = {label: i for i, label in enumerate(categories)}
-        p1["__y"] = p1[y_col].astype("string").map(mapping).astype(float)
-        p2["__y"] = p2[y_col].astype("string").map(mapping).astype(float)
-        y_ticks = list(mapping.values())
-        y_labels = list(mapping.keys())
-
-    p1 = p1.dropna(subset=["__y"])
-    p2 = p2.dropna(subset=["__y"])
-
-    fig, ax = plt.subplots(figsize=figsize)
-
-    if df1_kind == "scatter":
-        ax.scatter(p1[x_col], p1["__y"], color="tab:blue", alpha=0.85, label=df1_label)
-    else:
-        ax.plot(p1[x_col], p1["__y"], color="tab:blue", marker="o", linewidth=1.5, label=df1_label)
-
-    if df2_kind == "scatter":
-        ax.scatter(p2[x_col], p2["__y"], color="tab:orange", alpha=0.85, label=df2_label)
-    else:
-        ax.plot(p2[x_col], p2["__y"], color="tab:orange", marker="o", linewidth=1.5, label=df2_label)
-
-    ax.set_xlabel(x_col)
-    ax.set_ylabel(y_col)
-    ax.set_title(f"{y_col}: {df1_label} vs {df2_label} by {x_col}")
-    ax.grid(True, alpha=0.25)
-    _apply_yticks(ax, y_ticks, y_labels)
-    ax.legend(loc="best")
-
-    fig.tight_layout()
-    return fig, ax
+    return plot_n_series_by_x(
+        dataframes=[df1, df2],
+        x_col=x_col,
+        y_col=y_col,
+        labels=[df1_label, df2_label],
+        kinds=[df1_kind, df2_kind],
+        figsize=figsize,
+    )
