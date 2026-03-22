@@ -3,7 +3,7 @@ import random
 from pathlib import Path
 
 import cv2
-import mediapipe as mp
+
 import numpy as np
 import pandas as pd
 import torch
@@ -46,20 +46,22 @@ transform_infer = transforms.Compose([
 
 # ── Face crop ─────────────────────────────────────────────────────────────────
 
-mp_face = mp.solutions.face_detection.FaceDetection(min_detection_confidence=0.5)
+face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
 
 def crop_face(img_pil):
     img_np  = np.array(img_pil)
-    results = mp_face.process(cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR))
-    if results.detections:
-        det = results.detections[0]
-        bb  = det.location_data.relative_bounding_box
-        h, w = img_np.shape[:2]
-        x1 = max(0, int((bb.xmin - 0.1) * w))
-        y1 = max(0, int((bb.ymin - 0.1) * h))
-        x2 = min(w, int((bb.xmin + bb.width  + 0.1) * w))
-        y2 = min(h, int((bb.ymin + bb.height + 0.1) * h))
+    gray    = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
+    faces   = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5)
+
+    if len(faces) > 0:
+        x, y, w, h = faces[0]
+        margin = 20
+        x1 = max(0, x - margin)
+        y1 = max(0, y - margin)
+        x2 = min(img_np.shape[1], x + w + margin)
+        y2 = min(img_np.shape[0], y + h + margin)
         return Image.fromarray(img_np[y1:y2, x1:x2])
+
     return img_pil
 
 # ── Dataset ───────────────────────────────────────────────────────────────────
