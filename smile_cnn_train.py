@@ -14,7 +14,6 @@ from torch.utils.data import Dataset, DataLoader, Subset
 from torchvision import transforms
 from tqdm import tqdm, trange
 
-# ── Config ────────────────────────────────────────────────────────────────────
 
 SEED       = 42
 BATCH_SIZE = 256
@@ -27,7 +26,6 @@ IMG_DIR    = os.path.join(CELEBA_DIR, "img_align_celeba/img_align_celeba")
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# ── Transforms ────────────────────────────────────────────────────────────────
 
 transform_train = transforms.Compose([
     transforms.Resize((224, 224)),
@@ -44,7 +42,6 @@ transform_infer = transforms.Compose([
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 ])
 
-# ── Face crop ─────────────────────────────────────────────────────────────────
 
 face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
 
@@ -64,7 +61,6 @@ def crop_face(img_pil):
 
     return img_pil
 
-# ── Dataset ───────────────────────────────────────────────────────────────────
 
 class CelebADataset(Dataset):
     def __init__(self, csv_file, img_dir, transform=None, crop=False):
@@ -87,7 +83,6 @@ class CelebADataset(Dataset):
             image = self.transform(image)
         return image, label, gender
 
-# ── Loaders ───────────────────────────────────────────────────────────────────
 
 def make_loader(ds, shuffle):
     return DataLoader(ds, batch_size=BATCH_SIZE, shuffle=shuffle,
@@ -117,7 +112,6 @@ def build_loaders(crop=False):
         test_idx,
     )
 
-# ── Train / eval ──────────────────────────────────────────────────────────────
 
 def train_epoch(model, loader, optimizer, criterion):
     model.train()
@@ -163,10 +157,9 @@ def eval_model(model, loader, criterion):
         torch.cat(all_genders).squeeze(),
     )
 
-# ── Run ───────────────────────────────────────────────────────────────────────
 
 def run_training(save_path, crop=False):
-    print(f"\n--- Entraînement {'avec' if crop else 'sans'} crop → {save_path} ---")
+    print(f"\n--- Entraînement {'avec' if crop else 'sans'} crop : {save_path} ---")
     print(f"Device : {device}")
 
     train_loader, val_loader, test_loader, test_idx = build_loaders(crop=crop)
@@ -209,8 +202,6 @@ def run_training(save_path, crop=False):
     }, save_path)
     print(f"Modèle sauvegardé dans {save_path}")
 
-
-# ── Point d'entrée ────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     run_training("saved_models/resnet18.pt", crop=False)
