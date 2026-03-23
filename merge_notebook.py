@@ -5,18 +5,8 @@ def merge_notebooks(path_a, path_b, output_path):
     nb_a = nbformat.read(path_a, as_version=4)
     nb_b = nbformat.read(path_b, as_version=4)
 
-    # Contenu des cellules du notebook A pour détecter les doublons
-    contenu_a = set(''.join(cell.source) for cell in nb_a.cells)
-
-    # Garder uniquement les cellules du notebook B absentes du notebook A
-    cellules_b_uniques = [
-        cell for cell in nb_b.cells
-        if ''.join(cell.source) not in contenu_a
-    ]
-
-
     nb_merged = nb_a
-    nb_merged.cells = nb_a.cells + cellules_b_uniques
+    nb_merged.cells = nb_a.cells + nb_b.cells
 
     # Corriger les IDs dupliqués
     ids_vus = set()
