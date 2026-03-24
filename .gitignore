@@ -5,3 +5,4 @@ data/CelebA
 *.pt
 saved_models/
 resnet18.pt
+Data/
