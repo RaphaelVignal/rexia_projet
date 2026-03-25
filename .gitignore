@@ -3,6 +3,7 @@
 uv.lock
 data/CelebA
 *.pt
+*.pkl
 saved_models/
 resnet18.pt
 Data/
