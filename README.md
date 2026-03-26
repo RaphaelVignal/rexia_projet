@@ -4,9 +4,9 @@
 
 ### Gaël GARNIER - Raphaël VIGNAL - Maëlys HANOIRE - Fanny BADOULES
 
-Projet d'analyse de biais dans des modèles de machine learning sur deux types de données : données RH tabulaires et données images.
+Projet d'analyse de biais dans des modèles de machine learning sur deux types de données : données tabulaires, données images et données textuelles.
 
-## Partie 1 - Données RH
+## Partie 1 - Données tabulaires
 
 Prédiction de la démission d'employés à partir d'un dataset RH.
 
@@ -26,6 +26,18 @@ Classification binaire souriant / non souriant sur le dataset CelebA, avec analy
 * Évaluation de l'équité : accuracy, FPR, FNR par genre
 * Explication post-hoc : GradCAM et LIME
 * Intervention : crop du visage (OpenCV CascadeClassifier) pour réduire les biais liés au fond
+
+
+## Partie 3 - Données textuelles
+
+- Dataset Civil Comments, 30 000 commentaires avec labels de toxicité et annotations démographiques (genre, couleur de peau, orientation sexuelle)
+- Analyse exploratoire : longueurs des textes, distribution des classes, équilibre du dataset
+- Prétraitement : nettoyage, tokenisation (NLTK), lemmatisation, nuages de mots toxiques / non-toxiques
+- Visualisation TF-IDF par classe pour identifier les termes discriminants
+- Analyse démographique : taux de toxicité par groupe sensible (female, male, black, white, homosexual)
+- Classification Régression Logistique (80/20) avec évaluation et commentaires
+- Explicabilité : SHAP (summary plot, waterfall, PDP) et LIME pour expliquer les décisions du modèle
+- Fairness : analyse à deux niveaux dataset (taux de toxicité par groupe) et modèle (FPR, FNR, selection rate par groupe) via Fairlearn
 
 ## Dépendances
 
