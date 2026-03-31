@@ -1,6 +1,6 @@
 # REXIA Projet 2026
 
-## Groupe 6
+## Groupe 6 - fichier final : Gr06_REXIA2026.ipynb
 
 ### Gaël GARNIER - Raphaël VIGNAL - Maëlys HANOIRE - Fanny BADOULES
 
@@ -26,7 +26,6 @@ Classification binaire souriant / non souriant sur le dataset CelebA, avec analy
 * Évaluation de l'équité : accuracy, FPR, FNR par genre
 * Explication post-hoc : GradCAM et LIME
 * Intervention : crop du visage (OpenCV CascadeClassifier) pour réduire les biais liés au fond
-
 
 ## Partie 3 - Données textuelles
 
