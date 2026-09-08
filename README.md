@@ -40,12 +40,31 @@ Classification binaire souriant / non souriant sur le dataset CelebA, avec analy
 
 ## Dépendances
 
-Pour ajouter la librairie à votre projet :
+Le projet utilise Python 3.12 et `uv` pour la gestion de l'environnement.
 
-```
-uv add "la librairie"
-```
+### Création de l'environnement virtuel
 
-```
+```bash
 uv venv --python 3.12
 ```
+
+### Activation de l'environnement
+
+```bash
+source .venv/bin/activate
+```
+
+### Principales bibliothèques
+
+* `pandas`
+* `numpy`
+* `scikit-learn`
+* `xgboost`
+* `shap`
+* `fairlearn`
+* `torch`
+* `torchvision`
+* `opencv-python`
+* `nltk`
+* `lime`
+* `pygam`
